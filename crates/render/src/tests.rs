@@ -2914,3 +2914,66 @@ fn pie_data_labels_take_the_chart_text_colour_when_it_has_one() {
     assert!(count(&coloured, &red) > 30, "the labels take the chart's red: {} red pixels", count(&coloured, &red));
     assert!(count(&plain, &white) > count(&coloured, &white), "the labels were white before");
 }
+
+/// A black 400 x 300 pt box at (60, 60), drawn with a dissolve at `level` (None: no animation).
+fn dissolved(level: Option<f64>, scale: f64) -> super::Image {
+    let sh = Shape {
+        id: ShapeId(700),
+        xfrm: Some(Xfrm::new(60.0, 60.0, 400.0, 300.0)),
+        fill: Some(Fill::solid(ColorRef::rgb(Rgba::rgb(0, 0, 0)))),
+        line: Some(deckcraft_model::style::Line { fill: Some(Fill::None), ..Default::default() }),
+        ..Default::default()
+    };
+    let p = deck_with(vec![sh]);
+    let state = move |_: ShapeId| ShapeState { dissolve: level, ..Default::default() };
+    render_slide(&p, 0, &RenderOpts { scale, state: Some(&state), ..Default::default() })
+}
+
+/// The pixels inside the box (60..460 x 60..360 pt, less a margin) that are black.
+fn shown(img: &super::Image, scale: f64) -> Vec<bool> {
+    let (x0, x1, y0, y1) = ((70.0 * scale) as u32, (450.0 * scale) as u32, (70.0 * scale) as u32, (350.0 * scale) as u32);
+    (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).map(|(x, y)| img.pixel(x, y)[0] < 128).collect()
+}
+
+#[test]
+fn a_dissolve_shows_the_share_it_asks_for() {
+    for level in [0.1, 0.3, 0.5, 0.7, 0.9] {
+        let img = dissolved(Some(level), 1.0);
+        let on = shown(&img, 1.0);
+        let share = on.iter().filter(|b| **b).count() as f64 / on.len() as f64;
+        assert!((share - level).abs() < 0.03, "level {level}: {share}");
+        // Nothing outside the shape.
+        assert_eq!(img.pixel(20, 20), [255, 255, 255, 255]);
+        assert_eq!(img.pixel(600, 400), [255, 255, 255, 255]);
+    }
+    // Nothing at 0, all of it at 1, the same as no animation.
+    assert!(shown(&dissolved(Some(0.0), 1.0), 1.0).iter().all(|b| !b));
+    assert!(shown(&dissolved(Some(1.0), 1.0), 1.0).iter().all(|b| *b));
+    assert_eq!(dissolved(Some(1.0), 1.0).pixel(200, 200), dissolved(None, 1.0).pixel(200, 200));
+}
+
+#[test]
+fn what_a_dissolve_has_shown_stays_shown() {
+    let sets: Vec<Vec<bool>> = [0.2, 0.4, 0.6, 0.8].iter().map(|l| shown(&dissolved(Some(*l), 1.0), 1.0)).collect();
+    for pair in sets.windows(2) {
+        assert!(pair[0].iter().zip(&pair[1]).all(|(a, b)| !*a || *b), "a pixel went away as the level grew");
+        assert!(pair[1].iter().filter(|b| **b).count() > pair[0].iter().filter(|b| **b).count());
+    }
+}
+
+#[test]
+fn a_dissolve_is_the_same_pattern_at_any_scale() {
+    // The noise sits in slide space: a 2x render, shrunk 2x, matches the 1x one (independent noise
+    // would differ on about 4 pixels in 10).
+    let (one, two) = (dissolved(Some(0.5), 1.0), dissolved(Some(0.5), 2.0));
+    let mut diff = 0.0;
+    let mut n = 0.0;
+    for y in 70..350u32 {
+        for x in 70..450u32 {
+            let avg: f64 = (0..4).map(|i| two.pixel(2 * x + i % 2, 2 * y + i / 2)[0] as f64 / 255.0).sum::<f64>() / 4.0;
+            diff += (one.pixel(x, y)[0] as f64 / 255.0 - avg).abs();
+            n += 1.0;
+        }
+    }
+    assert!(diff / n < 0.2, "mean difference {}", diff / n);
+}
