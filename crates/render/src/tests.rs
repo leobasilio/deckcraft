@@ -3014,3 +3014,29 @@ fn a_dissolve_is_the_same_pattern_at_any_scale() {
     }
     assert!(diff / n < 0.2, "mean difference {}", diff / n);
 }
+
+#[test]
+fn a_dissolve_covers_what_the_shape_draws_far_from_its_box() {
+    // A 40 pt box whose shadow falls 400 pt to its right, well past the room round the box: the
+    // shadow dissolves with the shape instead of being cut off.
+    let sh = Shape {
+        id: ShapeId(701),
+        xfrm: Some(Xfrm::new(20.0, 20.0, 40.0, 40.0)),
+        fill: Some(Fill::solid(ColorRef::rgb(Rgba::rgb(0, 0, 0)))),
+        line: Some(deckcraft_model::style::Line { fill: Some(Fill::None), ..Default::default() }),
+        effects: Some(deckcraft_model::Effects { outer_shadow: Some(shadow(0.0, 400.0, 0.0)), ..Default::default() }),
+        ..Default::default()
+    };
+    let p = deck_with(vec![sh]);
+    let state = |_: ShapeId| ShapeState { dissolve: Some(0.9), ..Default::default() };
+    let img = render_slide(&p, 0, &RenderOpts { scale: 1.0, state: Some(&state), ..Default::default() });
+    let (mut on, mut all) = (0, 0);
+    for y in 22..58u32 {
+        for x in 422..458u32 {
+            all += 1;
+            on += u32::from(img.pixel(x, y)[0] < 128);
+        }
+    }
+    let share = f64::from(on) / f64::from(all);
+    assert!((share - 0.9).abs() < 0.06, "the far shadow shows the dissolve's share: {share}");
+}

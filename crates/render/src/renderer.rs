@@ -374,10 +374,9 @@ impl Renderer {
             let clip = st.clip.map(|[l, t, r, b]| Rect::new(l * x.w, t * x.h, r * x.w, b * x.h).to_path(0.1));
             let mut opacity = st.opacity.clamp(0.0, 1.0);
             // A dissolve shows part of the shape, wherever its noise is below the level: the area
-            // is the shape's box with room for the effects round it.
+            // is the whole canvas, as a shadow, reflection or overflowing text can fall anywhere.
             let mask = dissolve.and_then(|d| {
-                let room = 0.25 * x.w.max(x.h) + 32.0;
-                let area = m.transform_rect_bbox(Rect::new(-room, -room, x.w + room, x.h + room));
+                let area = Rect::new(0.0, 0.0, f64::from(ctx.width()), f64::from(ctx.height()));
                 let view = Affine::translate(f.opts.offset) * Affine::scale(f.opts.scale);
                 let mask = dissolve::mask(ctx.width(), ctx.height(), area, view, 0x5DEE_CE66 ^ u64::from(s.id.0).wrapping_mul(0x9E37_79B9), d);
                 if mask.is_none() {
